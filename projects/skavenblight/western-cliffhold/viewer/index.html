@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skavenblight — Western Cliffhold / Draggable 3D Blockout</title><style>
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:#0f1715;color:#e3e4d4;font:14px system-ui,Segoe UI,Arial,sans-serif}#wrap{height:100%;display:flex;flex-direction:column}.header{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 18px;background:#18231e;border-bottom:1px solid #58604c}.header b{font-size:18px;color:#e8e6d2}.subtitle{color:#b8c3af;font-size:12px}#controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}button{background:#2d4738;color:#dcebd3;border:1px solid #628765;border-radius:6px;padding:8px 11px;cursor:pointer}button:hover{background:#405945}input[type=checkbox]{accent-color:#93dc64}label{white-space:nowrap;font-size:12px}#plot{flex:1;position:relative;min-height:370px;touch-action:none;cursor:grab}canvas{display:block;width:100%;height:100%}#help{position:absolute;bottom:14px;left:14px;background:#101c17d9;color:#ecf1df;padding:11px 14px;border-radius:6px;border:1px solid #4b654d;font-size:12px;max-width:340px;pointer-events:none}.footer{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between;padding:9px 17px;border-top:1px solid #44574b;color:#9aa899;font-size:12px}.sw{color:#bcf76f}.em{color:#ffa75e}@media(max-width:720px){.header b{font-size:15px}#help{font-size:10px;max-width:230px}}
+</style></head><body><div id="wrap"><div class="header"><div><b>SKAVENBLIGHT · WESTERN CLIFFHOLD</b><div class="subtitle">96 × 96 in, approximate 32mm heroic terrain scale · true drag-to-rotate 3D schematic</div></div><div id="controls"><button onclick="preset('iso')">Isometric</button><button onclick="preset('top')">Overhead</button><button onclick="preset('west')">West-facing</button><button onclick="preset('south')">South-facing</button><label><input type="checkbox" id="mountain" checked> Mountains</label><label><input type="checkbox" id="buildings" checked> Buildings</label><label><input type="checkbox" id="glow" checked> Warp glow</label></div></div><div id="plot"><canvas id="canvas"></canvas><div id="help"><b>DRAG TO ROTATE</b> · Scroll/pinch to zoom<br><span class="sw">Green:</span> warpstone pits and portal effects<br><span class="em">Orange:</span> industrial furnaces and chimneys<br>Central bell tower rises to ~40 in; western massif to ~50 in.<br>Experimental scene blockout, not exact STL geometry.</div></div><div class="footer"><span>Western massif ← W | N ↑ | E → swamps</span><span>Custom offline viewer · No internet or external libraries required</span></div></div>
+<script>
+(()=>{
+const cvs=document.getElementById('canvas'),ctx=cvs.getContext('2d'),box=document.getElementById('plot');
+let W=900,H=650,az=0.58,el=0.82,zoom=1.0,faces=[],drag=false,lastX=0,lastY=0,show={mountain:true,buildings:true,glow:true};
+let seed=15417;function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}function rr(a,b){return a+(b-a)*rand()}
+function v(x,y,z){return [x,y,z]}
+function face(points,color,kind='terrain',edge=null){faces.push({points,color,kind,edge})}
+function box3(x,y,z,w,d,h,color,kind='buildings',roof=false){
+const p=[v(x-w/2,y-d/2,z),v(x+w/2,y-d/2,z),v(x+w/2,y+d/2,z),v(x-w/2,y+d/2,z)],t=p.map(q=>v(q[0],q[1],z+h));
+face([p[0],p[1],t[1],t[0]],color,kind);face([p[1],p[2],t[2],t[1]],color,kind);face([p[2],p[3],t[3],t[2]],color,kind);face([p[3],p[0],t[0],t[3]],color,kind);face(t,color,kind);
+if(roof){const top=v(x,y,z+h+Math.max(1,w*.7));for(let i=0;i<4;i++)face([t[i],t[(i+1)%4],top],'#242526',kind)}
+}
+function cylinder(cx,cy,rx,ry,z0,z1,color,n=56,kind='terrain',offset=0){const a=[],b=[];for(let i=0;i<n;i++){let q=i*2*Math.PI/n,dist=1+0.06*Math.sin(5*q+offset)+.024*Math.cos(11*q+offset);a.push(v(cx+rx*Math.cos(q)*dist,cy+ry*Math.sin(q)*dist,z0));b.push(v(cx+rx*Math.cos(q)*dist,cy+ry*Math.sin(q)*dist,z1))}for(let i=0;i<n;i++)face([a[i],a[(i+1)%n],b[(i+1)%n],b[i]],color,kind);for(let i=0;i<n;i++)face([v(cx,cy,z1),b[i],b[(i+1)%n]],color,kind,'#8d8373')}
+function line(x1,y1,z1,x2,y2,z2,width,color,kind='roads'){ // 3D rectangular beam along horizontal route
+let dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy),nx=-dy/len*width/2,ny=dx/len*width/2;
+face([v(x1+nx,y1+ny,z1),v(x1-nx,y1-ny,z1),v(x2-nx,y2-ny,z2),v(x2+nx,y2+ny,z2)],color,kind,'#d8c0a2')}
+function height(x,y){let west=52/(1+Math.exp(Math.max(-40,Math.min(40,(x-18)/2.7))))*(.79+.13*Math.sin(y/7)**2);let north=28/(1+Math.exp(Math.max(-40,Math.min(40,(78-y)/4))))*(.55+.25*Math.cos(x/8)**2);let sp=12*Math.exp(-Math.pow((x-31)/13,2)-Math.pow((y-84)/13,2));return west+north+sp+.9*Math.sin(x*1.37+y*.68)}
+// Full square ground foundation
+face([v(0,0,-1),v(96,0,-1),v(96,96,-1),v(0,96,-1)],'#203b32','base');
+// Swamps at exterior along south/east
+for(let k=0;k<34;k++){let x=rr(4,95),y=rr(2,17),rx=rr(2,11),ry=rr(1.5,5),poly=[];for(let i=0;i<20;i++){let a=i*Math.PI*2/20;poly.push(v(x+Math.cos(a)*rx,y+Math.sin(a)*ry,.06))}face(poly,'#23645d','swamp')}
+for(let k=0;k<20;k++){let x=rr(83,96),y=rr(10,85),rx=rr(1,5),ry=rr(1,9),poly=[];for(let i=0;i<18;i++){let a=i*Math.PI*2/18;poly.push(v(x+Math.cos(a)*rx,y+Math.sin(a)*ry,.03))}face(poly,'#205951','swamp')}
+// mountain mesh, avoid overlapping city east beyond x=34
+for(let x=0;x<37;x+=3)for(let y=0;y<96;y+=3){let xx=x,zz=(a,b)=>height(a,b);let p=[v(x,y,zz(x,y)),v(x+3,y,zz(x+3,y)),v(x+3,y+3,zz(x+3,y+3)),v(x,y+3,zz(x,y+3))];let col=zz(x+1.5,y+1.5)>40?'#b7c2c6':zz(x+1.5,y+1.5)>29?'#747d80':'#404746';face([p[0],p[1],p[2]],col,'mountain');face([p[0],p[2],p[3]],col,'mountain')}
+for(let x=36;x<96;x+=3)for(let y=75;y<96;y+=3){let z=(a,b)=>height(a,b),p=[v(x,y,z(x,y)),v(x+3,y,z(x+3,y)),v(x+3,y+3,z(x+3,y+3)),v(x,y+3,z(x,y+3))],c=z(x+1.5,y+1.5)>24?'#a5b5bd':'#475154';face([p[0],p[1],p[2]],c,'mountain');face([p[0],p[2],p[3]],c,'mountain')}
+// 4 city rise surfaces: outer ground to central
+cylinder(59,49,32,30,0.3,2.4,'#48483e',64); // ground
+cylinder(59.6,51,25,22,2.4,4.2,'#626052',62,'terrain',.2);
+cylinder(61.6,54,17.5,15.8,4.2,9.1,'#746d5e',60,'terrain',.5);
+cylinder(63.1,56.1,10.7,9.5,9.1,16,'#887d6b',50,'terrain',1.1);
+// fortress wall as chain with towers
+let wc=[],N=64;for(let i=0;i<N;i++){let a=i*2*Math.PI/N,m=1+.045*Math.sin(5*a+.9);wc.push(v(59+32.6*Math.cos(a)*m,49+30.8*Math.sin(a)*m,2.4))}
+for(let i=0;i<N;i++){let a=wc[i],b=wc[(i+1)%N],dx=b[0]-a[0],dy=b[1]-a[1],thick=1.05;let nx=-dy/Math.hypot(dx,dy)*thick,ny=dx/Math.hypot(dx,dy)*thick;face([v(a[0]+nx,a[1]+ny,.8),v(b[0]+nx,b[1]+ny,.8),v(b[0]+nx,b[1]+ny,8),v(a[0]+nx,a[1]+ny,8)],'#8b8878');face([v(a[0]-nx,a[1]-ny,.8),v(b[0]-nx,b[1]-ny,.8),v(b[0]-nx,b[1]-ny,8),v(a[0]-nx,a[1]-ny,8)],'#696c5f');face([v(a[0]+nx,a[1]+ny,8),v(b[0]+nx,b[1]+ny,8),v(b[0]-nx,b[1]-ny,8),v(a[0]-nx,a[1]-ny,8)],'#c3b9a5')}
+for(let i=0;i<N;i+=5)box3(wc[i][0],wc[i][1],1.6,3.8,4.0,9,'#5c5d55','buildings',true);
+// central gates west south, sally doors
+box3(60,18.8,2,10,4,12,'#4d514b','buildings',true);box3(58,18.8,2,3,4,15,'#555950','buildings',true);box3(62,18.8,2,3,4,15,'#555950','buildings',true);
+// two visibly green pit surfaces as impressions, pipes & machinery
+for(let [x,y,rx,ry] of [[44.5,37.3,8,9.5],[82,50,7.1,11.2]]){
+let poly=[],top=[];for(let i=0;i<32;i++){let a=i*2*Math.PI/32;poly.push(v(x+(rx-1)*Math.cos(a),y+(ry-1)*Math.sin(a),3.4));top.push(v(x+rx*Math.cos(a),y+ry*Math.sin(a),4.4))}face(poly,'#174b24','glow','#b9ef76');for(let i=0;i<32;i++)face([poly[i],poly[(i+1)%32],top[(i+1)%32],top[i]],'#31562f','glow');
+for(let i=0;i<6;i++){let xx=x-5+i*1.7;box3(xx,y+rr(-3,3),4.4,1.6,1.8,rr(5,11),'#444c48','buildings');box3(xx,y+rr(-3,3),9,1.8,2,1.3,'#8ec35e','glow')}
+}
+// Industrial city districts, nested rings and rooftop setbacks
+for(let i=0;i<340;i++){
+ let x=rr(29,88),y=rr(20,80);let wall=((x-59)/32)**2+((y-49)/30)**2;if(wall>1)continue;
+ let z=2.4,tier=0;if(((x-59.6)/25)**2+((y-51)/22)**2<.98){z=4.2;tier=1}if(((x-61.6)/17.5)**2+((y-54)/15.8)**2<.96){z=9.1;tier=2}if(((x-63.1)/10.7)**2+((y-56.1)/9.5)**2<.96){z=16;tier=3}
+ if((x-63.1)**2+(y-56.1)**2<57)continue;
+ if(((x-44.5)/9)**2+((y-37.3)/11)**2<1||((x-82)/9)**2+((y-50)/12)**2<1)continue;
+ let w=rr(1,3.7),d=rr(1,4.0),height=rr(2.3,6.5)+(tier>1?rr(1,3):0);
+ let color=['#4a453e','#585349','#686055','#7a6b5d'][tier];box3(x,y,z,w,d,height,color,'buildings',rand()>.55);
+ if(rand()<.13)box3(x+w*.2,y+d*.2,z+height,.8,.8,rr(3,7),'#3f413c','buildings',true);
+}
+// cliff miners and northern forges
+for(let i=0;i<26;i++){let x=rr(24,40),y=rr(47,93),z=height(x,y);box3(x,y,z,rr(2,5),rr(2,5),rr(3,7),'#544b43','buildings',rand()>.55)}
+for(let [x,y] of [[25,53],[31,67],[44,82],[83,32],[89,71],[85,14]]){let z=height(x,y);box3(x,y,z+1,5,5,7,'#5c4c39','buildings',true);for(let i=0;i<2;i++)box3(x+rr(-2,2),y+rr(-2,2),z+6,1.4,1.4,rr(5,12),'#4f5147','buildings')}
+// Under-city road and causeways
+line(61,10,.6,60,18,2.8,4.7,'#7c6b5b');line(60,18,3,63,56,17,3.2,'#d0b99b');line(41,49,4,52,54,12,2.7,'#a09075');line(70,60,18,86,65,8,2.7,'#b7a48c');
+// Major centerpiece base & bell frame
+box3(63.1,56.1,16,10,9.5,9,'#464943','buildings',true);
+box3(63.1,56.1,25,6.4,6.4,7,'#313a34','buildings');
+box3(63.1,56.1,32,4.2,4.2,5.7,'#252d29','buildings',true);
+for(let dx of [-4.8,4.8])for(let dy of [-4.3,4.3])box3(63.1+dx,56.1+dy,16,1.6,1.6,17+rr(1,6),'#333734','buildings',true);
+box3(63.1,56.1,33,2.9,2.5,3.5,'#92ac61','glow');
+// rusty smokestacks around foundries
+for(let i=0;i<34;i++){let x=rr(36,88),y=rr(20,83);let city=((x-59)/33)**2+((y-49)/32)**2;if(city>1)continue;let z=2.4;if(((x-59.6)/25)**2+((y-51)/22)**2<1)z=4.2;if(((x-61.6)/17.5)**2+((y-54)/15.8)**2<1)z=9.1;box3(x,y,z,1.25,1.25,rr(7,15),'#655a4e','buildings');box3(x,y,z+10,1.5,1.5,1,'#c7743b','glow')}
+// extra gnawholes green on outside
+for(let [x,y] of [[89,72],[25,21],[33,78]]){box3(x,y,1.1,3,1.0,5,'#5c5547','buildings');box3(x,y,3.7,2.5,1.1,2.2,'#6ab54b','glow')}
+// draw
+function proj(p){let x=p[0]-48,y=p[1]-48,z=p[2]-10,ca=Math.cos(az),sa=Math.sin(az),ce=Math.cos(el),se=Math.sin(el);let ux=ca*x+sa*y,vy=-sa*x+ca*y;let sx=ux,sy=vy*se+z*ce,depth=-vy*ce+z*se;return [sx,sy,depth]}
+function render(){let dpr=Math.min(2,window.devicePixelRatio||1);let rect=box.getBoundingClientRect();W=rect.width;H=rect.height;cvs.width=Math.round(W*dpr);cvs.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#26302f');g.addColorStop(1,'#101c19');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ let S=Math.min(W/153,H/120)*zoom,cx=W/2,cy=H*.54;
+ let sorted=[];for(let f of faces){if(f.kind==='base')continue;if(show[f.kind]===false)continue;let pts=f.points.map(proj);let dep=pts.reduce((a,p)=>a+p[2],0)/pts.length;sorted.push({pts,dep,color:f.color,edge:f.edge})}sorted.sort((a,b)=>a.dep-b.dep);for(let f of sorted){let P=f.pts;ctx.beginPath();for(let i=0;i<P.length;i++){let u=cx+P[i][0]*S,v=cy-P[i][1]*S;i?ctx.lineTo(u,v):ctx.moveTo(u,v)}ctx.closePath();ctx.fillStyle=f.color;ctx.fill();if(f.edge){ctx.strokeStyle=f.edge;ctx.lineWidth=.65;ctx.stroke()}}
+ // North marker
+ ctx.fillStyle='#dfe5d2';ctx.font='bold 14px system-ui';ctx.fillText('N ↑',W-66,30);
+ ctx.font='12px system-ui';ctx.fillStyle='#d9cbb4';ctx.fillText('Drag to orbit • Scroll to zoom',20,25)
+}
+let down=false;box.addEventListener('pointerdown',e=>{down=true;lastX=e.clientX;lastY=e.clientY;box.setPointerCapture(e.pointerId);box.style.cursor='grabbing'});box.addEventListener('pointermove',e=>{if(!down)return;az+=(e.clientX-lastX)*.008;el=Math.max(.15,Math.min(1.53,el+(e.clientY-lastY)*.006));lastX=e.clientX;lastY=e.clientY;render()});box.addEventListener('pointerup',()=>{down=false;box.style.cursor='grab'});box.addEventListener('pointercancel',()=>{down=false;box.style.cursor='grab'});box.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.4,Math.min(3,zoom*Math.exp(-e.deltaY*.001))) ;render()},{passive:false});
+for(let k of ['mountain','buildings','glow'])document.getElementById(k).addEventListener('change',e=>{show[k]=e.target.checked;render()});
+window.preset = function(name){let p={iso:[.65,.84,1],top:[0,1.53,1],west:[1.57,.58,.88],south:[0,.62,1.05]}[name];[az,el,zoom]=p;render()};window.addEventListener('resize',render);render();
+})();
+</script></body></html>
